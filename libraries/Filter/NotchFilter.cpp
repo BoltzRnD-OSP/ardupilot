@@ -59,7 +59,10 @@ template <class T>
 void NotchFilter<T>::init_with_A_and_Q(float sample_freq_hz, float center_freq_hz, float A, float Q)
 {
     // don't update if no updates required
-    if (initialised && is_equal(center_freq_hz, _center_freq_hz) && is_equal(sample_freq_hz, _sample_freq_hz)) {
+    if (initialised &&
+        is_equal(center_freq_hz, _center_freq_hz) &&
+        is_equal(sample_freq_hz, _sample_freq_hz) &&
+        is_equal(A, _A)) {
         return;
     }
 
@@ -71,7 +74,7 @@ void NotchFilter<T>::init_with_A_and_Q(float sample_freq_hz, float center_freq_h
                                           _center_freq_hz * NOTCH_MAX_SLEW_UPPER);
     }
 
-    if ((new_center_freq > 2.0) && (new_center_freq < 0.5 * sample_freq_hz) && (Q > 0.0)) {
+    if (is_positive(new_center_freq) && (new_center_freq < 0.5 * sample_freq_hz) && (Q > 0.0)) {
         float omega = 2.0 * M_PI * new_center_freq / sample_freq_hz;
         float alpha = sinf(omega) / (2 * Q);
         b0 =  1.0 + alpha*sq(A);
@@ -91,6 +94,7 @@ void NotchFilter<T>::init_with_A_and_Q(float sample_freq_hz, float center_freq_h
 
         _center_freq_hz = new_center_freq;
         _sample_freq_hz = sample_freq_hz;
+        _A = A;
         initialised = true;
     } else {
         // leave center_freq_hz at last value

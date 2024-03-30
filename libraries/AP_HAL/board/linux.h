@@ -83,7 +83,7 @@
     #define HAL_EXTERNAL_AHRS_DEFAULT 1
     #define DEFAULT_SERIAL3_PROTOCOL 36
     #define HAL_AIRSPEED_TYPE_DEFAULT 0
-    #define HAL_GPS_TYPE_DEFAULT 21
+    #define HAL_GPS1_TYPE_DEFAULT 21
     #define HAL_AHRS_EKF_TYPE_DEFAULT 11
 #elif CONFIG_HAL_BOARD_SUBTYPE == HAL_BOARD_SUBTYPE_LINUX_DISCO
     #define HAL_BOARD_LOG_DIRECTORY "/data/ftp/internal_000/ardupilot/logs"
@@ -279,14 +279,29 @@
     #define HAL_LINUX_HEAT_KP 20000
     #define HAL_LINUX_HEAT_KI 6
     #define HAL_LINUX_HEAT_PERIOD_NS 2040816
-    #define HAL_GPS_TYPE_DEFAULT 9
+    #define HAL_GPS1_TYPE_DEFAULT 9
     #define HAL_CAN_DRIVER_DEFAULT 1
 #elif CONFIG_HAL_BOARD_SUBTYPE == HAL_BOARD_SUBTYPE_LINUX_RST_ZYNQ
     #define HAL_INS_PROBE_LIST PROBE_IMU_SPI2(Invensense, "rst_g", "rst_a", ROTATION_ROLL_180_YAW_90, ROTATION_ROLL_180_YAW_90)
     #define HAL_BARO_PROBE_LIST PROBE_BARO_SPI(MS56XX, "ms5611")
     #define HAL_MAG_PROBE_LIST PROBE_MAG_SPI(LIS3MDL, lis3mdl, false, ROTATION_ROLL_180_YAW_90)
     #define HAL_OPTFLOW_PX4FLOW_I2C_BUS 0
-
+#elif CONFIG_HAL_BOARD_SUBTYPE == HAL_BOARD_SUBTYPE_LINUX_CANZERO
+    #define HAL_INS_PROBE_LIST PROBE_IMU_SPI(Invensense, "mpu9250", ROTATION_NONE)
+    #define HAL_BARO_PROBE_LIST PROBE_BARO_SPI(MS56XX, "ms5611")
+    #define HAL_MAG_PROBE_LIST PROBE_MAG_IMU(AK8963, mpu9250, 0, ROTATION_NONE)
+    #define HAL_PROBE_EXTERNAL_I2C_COMPASSES
+    #define HAL_NUM_CAN_IFACES 1
+    #define HAL_CAN_DRIVER_DEFAULT 1
+    #define HAL_GPIO_A_LED_PIN        22
+    #define HAL_GPIO_B_LED_PIN        27
+    #define HAL_GPIO_C_LED_PIN        6
+    #define HAL_GPIO_LED_ON           0
+    #define HAL_GPIO_LED_OFF          1
+    #define HAL_BOARD_LOG_DIRECTORY "/home/pi/ardupilot/logs"
+    #define HAL_BOARD_TERRAIN_DIRECTORY "/home/pi/ardupilot/terrain"
+    #define HAL_BOARD_STORAGE_DIRECTORY "/home/pi/ardupilot"
+    #define HAL_DEFAULT_INS_FAST_SAMPLE 0
 #elif CONFIG_HAL_BOARD_SUBTYPE == HAL_BOARD_SUBTYPE_LINUX_OBAL_V1
     
     //#define HAL_BARO_ALLOW_INIT_NO_BARO
@@ -383,8 +398,7 @@
 #ifdef __cplusplus
 #include <AP_HAL_Linux/Semaphores.h>
 #define HAL_Semaphore Linux::Semaphore
-#include <AP_HAL/EventHandle.h>
-#define HAL_EventHandle AP_HAL::EventHandle
+#define HAL_BinarySemaphore Linux::BinarySemaphore
 #endif
 
 #ifndef HAL_HAVE_HARDWARE_DOUBLE

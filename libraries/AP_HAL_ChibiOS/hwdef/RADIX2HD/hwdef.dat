@@ -165,11 +165,10 @@ BARO DPS310 I2C:0:0x76
 
 # probe external compasses (same bus as internal)
 define HAL_PROBE_EXTERNAL_I2C_COMPASSES
+define HAL_I2C_INTERNAL_MASK 0
 
 # filesystem setup on sdcard
 define HAL_OS_FATFS_IO 1
-
-define STM32_PWM_USE_ADVANCED TRUE
 
 define HAL_STORAGE_SIZE 16384
 

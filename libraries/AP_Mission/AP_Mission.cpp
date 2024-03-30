@@ -1,15 +1,21 @@
 /// @file    AP_Mission.cpp
 /// @brief   Handles the MAVLINK command mission stack.  Reads and writes mission to storage.
 
-#include "AP_Mission.h"
-#include <AP_Terrain/AP_Terrain.h>
-#include <GCS_MAVLink/GCS.h>
+#include "AP_Mission_config.h"
+
+#if AP_MISSION_ENABLED
+
 #include <AP_AHRS/AP_AHRS.h>
+#include <AP_BoardConfig/AP_BoardConfig.h>
 #include <AP_Camera/AP_Camera.h>
 #include <AP_Gripper/AP_Gripper_config.h>
-#include <AP_Vehicle/AP_Vehicle_Type.h>
-#include <AP_BoardConfig/AP_BoardConfig.h>
+#include "AP_Mission.h"
+#include <AP_Scripting/AP_Scripting.h>
 #include <AP_ServoRelayEvents/AP_ServoRelayEvents_config.h>
+#include <AP_Terrain/AP_Terrain.h>
+#include <AP_Vehicle/AP_Vehicle_Type.h>
+#include <GCS_MAVLink/GCS.h>
+#include <RC_Channel/RC_Channel_config.h>
 
 const AP_Param::GroupInfo AP_Mission::var_info[] = {
 
@@ -381,6 +387,7 @@ bool AP_Mission::verify_command(const Mission_Command& cmd)
     case MAV_CMD_IMAGE_STOP_CAPTURE:
     case MAV_CMD_SET_CAMERA_ZOOM:
     case MAV_CMD_SET_CAMERA_FOCUS:
+    case MAV_CMD_SET_CAMERA_SOURCE:
     case MAV_CMD_VIDEO_START_CAPTURE:
     case MAV_CMD_VIDEO_STOP_CAPTURE:
         return true;
@@ -405,8 +412,10 @@ bool AP_Mission::start_command(const Mission_Command& cmd)
     }
 
     switch (cmd.id) {
+#if AP_RC_CHANNEL_ENABLED
     case MAV_CMD_DO_AUX_FUNCTION:
         return start_command_do_aux_function(cmd);
+#endif
 #if AP_GRIPPER_ENABLED
     case MAV_CMD_DO_GRIPPER:
         return start_command_do_gripper(cmd);
@@ -426,6 +435,7 @@ bool AP_Mission::start_command(const Mission_Command& cmd)
     case MAV_CMD_IMAGE_STOP_CAPTURE:
     case MAV_CMD_SET_CAMERA_ZOOM:
     case MAV_CMD_SET_CAMERA_FOCUS:
+    case MAV_CMD_SET_CAMERA_SOURCE:
     case MAV_CMD_VIDEO_START_CAPTURE:
     case MAV_CMD_VIDEO_STOP_CAPTURE:
         return start_command_camera(cmd);
@@ -721,6 +731,7 @@ struct PACKED Packed_Location_Option_Flags {
     uint8_t origin_alt   : 1;           // this altitude is above ekf origin
     uint8_t loiter_xtrack : 1;          // 0 to crosstrack from center of waypoint, 1 to crosstrack from tangent exit location
     uint8_t type_specific_bit_0 : 1;    // each mission item type can use this for storing 1 bit of extra data
+    uint8_t type_specific_bit_1 : 1;    // each mission item type can use this for storing 1 bit of extra data
 };
 
 struct PACKED PackedLocation {
@@ -747,12 +758,12 @@ union PackedContent {
 
 };
 
-assert_storage_size<PackedContent, 12> assert_storage_size_PackedContent;
-
 /// load_cmd_from_storage - load command from storage
 ///     true is return if successful
 bool AP_Mission::read_cmd_from_storage(uint16_t index, Mission_Command& cmd) const
 {
+    ASSERT_STORAGE_SIZE(PackedContent, 12);
+
     WITH_SEMAPHORE(_rsem);
 
     // special handling for command #0 which is home
@@ -808,7 +819,10 @@ bool AP_Mission::read_cmd_from_storage(uint16_t index, Mission_Command& cmd) con
         cmd.content.location.lng = packed_content.location.lng;
 
         if (packed_content.location.flags.type_specific_bit_0) {
-            cmd.type_specific_bits = 1U << 0;
+            cmd.type_specific_bits |= 1U << 0;
+        }
+        if (packed_content.location.flags.type_specific_bit_1) {
+            cmd.type_specific_bits |= 1U << 1;
         }
     } else {
         // all other options in Content are assumed to be packed:
@@ -871,7 +885,8 @@ bool AP_Mission::write_cmd_to_storage(uint16_t index, const Mission_Command& cmd
         packed.location.flags.terrain_alt = cmd.content.location.terrain_alt;
         packed.location.flags.origin_alt = cmd.content.location.origin_alt;
         packed.location.flags.loiter_xtrack = cmd.content.location.loiter_xtrack;
-        packed.location.flags.type_specific_bit_0 = cmd.type_specific_bits & (1U<<0);
+        packed.location.flags.type_specific_bit_0 = (cmd.type_specific_bits & (1U<<0)) >> 0;
+        packed.location.flags.type_specific_bit_1 = (cmd.type_specific_bits & (1U<<1)) >> 1;
         packed.location.alt = cmd.content.location.alt;
         packed.location.lat = cmd.content.location.lat;
         packed.location.lng = cmd.content.location.lng;
@@ -970,6 +985,8 @@ MAV_MISSION_RESULT AP_Mission::sanity_check_params(const mavlink_mission_item_in
 //  return MAV_MISSION_ACCEPTED on success, MAV_MISSION_RESULT error on failure
 MAV_MISSION_RESULT AP_Mission::mavlink_int_to_mission_cmd(const mavlink_mission_item_int_t& packet, AP_Mission::Mission_Command& cmd)
 {
+    cmd = {};
+
     // command's position in mission list and mavlink id
     cmd.index = packet.seq;
     cmd.id = packet.command;
@@ -1016,18 +1033,25 @@ MAV_MISSION_RESULT AP_Mission::mavlink_int_to_mission_cmd(const mavlink_mission_
         break;
 
     case MAV_CMD_NAV_LOITER_TURNS: {                    // MAV ID: 18
-        // number of turns is stored in the lowest bits.  radii below
-        // 255m are stored in the top 8 bits as an 8-bit integer.
+        // number of turns is stored in the lowest bits. Number of
+        // turns 0 < N < 1 are stored multiplied by 256 and a bit set
+        // in storage so that on retrieval they are divided by 256.
+        // Radii below 255m are stored in the top 8 bits as an 8-bit integer.
         // Radii above 255m are stored divided by 10 and a bit set in
         // storage so that on retrieval they are multiplied by 10
-        cmd.p1 = MIN(255, packet.param1); // store number of times to circle in low p1
+        float param1_stored = packet.param1;
+        if (param1_stored > 0 && param1_stored < 1) {
+            param1_stored *= 256.0;
+            cmd.type_specific_bits |= (1U << 1);
+        }
+        cmd.p1 = MIN(255, param1_stored); // store number of times to circle in low p1
         uint8_t radius_m;
         const float abs_radius = fabsf(packet.param3);
         if (abs_radius <= 255) {
             radius_m = abs_radius;
         } else {
             radius_m = MIN(255, abs_radius * 0.1);
-            cmd.type_specific_bits = 1U << 0;
+            cmd.type_specific_bits |= (1U << 0);
         }
         cmd.p1 |= (radius_m<<8);   // store radius in high byte of p1
         cmd.content.location.loiter_ccw = (packet.param3 < 0);
@@ -1335,6 +1359,12 @@ MAV_MISSION_RESULT AP_Mission::mavlink_int_to_mission_cmd(const mavlink_mission_
         cmd.content.set_camera_focus.focus_value = packet.param2;
         break;
 
+    case MAV_CMD_SET_CAMERA_SOURCE:
+        cmd.content.set_camera_source.instance = packet.param1;
+        cmd.content.set_camera_source.primary_source = packet.param2;
+        cmd.content.set_camera_source.secondary_source = packet.param3;
+        break;
+
     case MAV_CMD_VIDEO_START_CAPTURE:
         cmd.content.video_start_capture.video_stream_id = packet.param1;
         break;
@@ -1534,6 +1564,9 @@ bool AP_Mission::mission_cmd_to_mavlink_int(const AP_Mission::Mission_Command& c
         }
         if (cmd.type_specific_bits & (1U<<0)) {
             packet.param3 *= 10;
+        }
+        if (cmd.type_specific_bits & (1U<<1)) {
+            packet.param1 /= 256.0;
         }
         packet.param4 = cmd.content.location.loiter_xtrack; // 0 to xtrack from center of waypoint, 1 to xtrack from tangent exit location
         break;
@@ -1838,6 +1871,12 @@ bool AP_Mission::mission_cmd_to_mavlink_int(const AP_Mission::Mission_Command& c
     case MAV_CMD_SET_CAMERA_FOCUS:
         packet.param1 = cmd.content.set_camera_focus.focus_type;
         packet.param2 = cmd.content.set_camera_focus.focus_value;
+        break;
+
+    case MAV_CMD_SET_CAMERA_SOURCE:
+        packet.param1 = cmd.content.set_camera_source.instance;
+        packet.param2 = cmd.content.set_camera_source.primary_source;
+        packet.param3 = cmd.content.set_camera_source.secondary_source;
         break;
 
     case MAV_CMD_VIDEO_START_CAPTURE:
@@ -2661,6 +2700,8 @@ const char *AP_Mission::Mission_Command::type() const
         return "SetCameraZoom";
     case MAV_CMD_SET_CAMERA_FOCUS:
         return "SetCameraFocus";
+    case MAV_CMD_SET_CAMERA_SOURCE:
+        return "SetCameraSource";
     case MAV_CMD_VIDEO_START_CAPTURE:
         return "VideoStartCapture";
     case MAV_CMD_VIDEO_STOP_CAPTURE:
@@ -2898,3 +2939,5 @@ AP_Mission *mission()
 }
 
 }
+
+#endif  // AP_MISSION_ENABLED
