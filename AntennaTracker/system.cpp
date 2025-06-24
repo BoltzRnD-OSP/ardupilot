@@ -116,7 +116,12 @@ bool Tracker::set_home_eeprom(const Location &temp)
     return true;
 }
 
-bool Tracker::set_home(const Location &temp)
+bool Tracker::set_home_to_current_location(bool lock)
+{
+    return set_home(AP::gps().location(), lock);
+}
+
+bool Tracker::set_home(const Location &temp, bool lock)
 {
     // check EKF origin has been set
     Location ekf_origin;
@@ -185,7 +190,7 @@ void Tracker::set_mode(Mode &newmode, const ModeReason reason)
 #endif
     gcs().send_message(MSG_HEARTBEAT);
 
-    nav_status.bearing = ahrs.yaw_sensor * 0.01f;
+    nav_status.bearing = ahrs.get_yaw_deg();
 }
 
 bool Tracker::set_mode(const uint8_t new_mode, const ModeReason reason)

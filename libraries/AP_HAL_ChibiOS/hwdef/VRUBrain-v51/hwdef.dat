@@ -4,8 +4,8 @@
 # MCU class and specific type
 MCU STM32F4xx STM32F407xx
 
-# board ID for firmware load
-APJ_BOARD_ID 1351
+# board ID. See Tools/AP_Bootloader/board_types.txt
+APJ_BOARD_ID AP_HW_VRUBRAIN_V51
 
 # crystal frequency
 OSCILLATOR_HZ 8000000
@@ -137,11 +137,9 @@ FLASH_RESERVE_START_KB 64
 # enable FAT filesystem
 define HAL_OS_FATFS_IO 1
 
-define HAL_GPIO_LED_ON  0
-define HAL_GPIO_LED_OFF 1
-
 define AP_NOTIFY_VRBOARD_LED_ENABLED 1
 define AP_NOTIFY_EXTERNALLED_ENABLED 1
+
 define HAL_GPIO_A_LED_PIN  25
 define HAL_GPIO_B_LED_PIN  26
 define HAL_GPIO_C_LED_PIN  27
@@ -169,5 +167,4 @@ include ../include/minimize_features.inc
 
 # save some flash
 define AC_PRECLAND_ENABLED 0
-define AP_ICENGINE_ENABLED 0
 define AP_OPTICALFLOW_ENABLED 0
