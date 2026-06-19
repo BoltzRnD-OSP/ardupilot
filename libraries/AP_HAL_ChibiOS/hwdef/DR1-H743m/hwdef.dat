@@ -127,7 +127,7 @@ PC4 BATT_CURRENT_SENS ADC1 SCALE(1)
 # Now setup the default battery pins driver analog pins and default
 # scaling for the power brick.
 define HAL_BATT_VOLT_PIN 10
-define HAL_BATT_CURR_PIN 11
+define HAL_BATT_CURR_PIN 4
 define HAL_BATT_VOLT_SCALE 11.1
 define HAL_BATT_CURR_SCALE 0
 define HAL_BATT_MONITOR_DEFAULT 4
